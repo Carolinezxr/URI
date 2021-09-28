@@ -1,0 +1,349 @@
+---
+title: "reported-crimes"
+author: "XuranZeng"
+date: "9/26/2021"
+output: 
+  html_document: 
+    toc: yes
+    toc_float: true 
+---
+
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(fig.width=12, fig.height=8, fig.pash='Figs/', echo = TRUE, warning=FALSE, message=FALSE)
+```
+
+```{r, echo=FALSE}
+library(readr)
+library(PerformanceAnalytics)
+library(lubridate)
+library(zoo)
+library(xts)
+library(ggplot2)
+library(dplyr)
+library(knitr)
+library(corrplot)
+library(forecast)
+```
+
+# Reported crimes
+## types of reported crimes within each district
+```{r, echo=FALSE}
+# time: entire sample
+# log(num_reported_crime)
+crimes_data<-read_csv("/home/xuranzeng/crimes_data.csv",)
+crimes_data_sample<-crimes_data[,c('Date','Primary Type','District')]
+a<-aggregate(crimes_data_sample$`Primary Type`,by=list(district=crimes_data_sample$District, type=crimes_data_sample$`Primary Type`),length)
+
+
+ggplot(data=a, aes(x=district, y=type))+
+  theme_bw(base_family = "STKaiti")+
+  geom_tile(aes(fill=log(x)),colour="white")+
+  scale_fill_gradient(low="white", high="black")+
+  ggtitle("2001-2021")
+```
+Difference between each district is not obvious. See last 5 years(2018-2021)
+
+```{r, echo=FALSE}
+crimes_data$year<-year(as.Date(unlist(crimes_data$Date),"%m/%d/%Y"))
+crimes_data_2018_2021<-as.data.frame(crimes_data[which(crimes_data$year>2017),])
+crimes_data_sample<-crimes_data_2018_2021
+a<-aggregate(crimes_data_sample$`Primary Type`,by=list(district=crimes_data_sample$District, type=crimes_data_sample$`Primary Type`),length)
+
+
+ggplot(data=a, aes(x=district, y=type))+
+  theme_bw(base_family = "STKaiti")+
+  geom_tile(aes(fill=log(x)),colour="white")+
+  scale_fill_gradient(low="white", high="black")+
+  ggtitle("2018-2021")
+```
+1-Narcotics: districts with most reported-narcotics are 10, 11, 15 and 25, which are zone 12 and zone 10 (but you told me before that zone which most drug is zone 2-district19?)\
+2-Weapon Violation: districts with most reported-weapon violation are 10, 11, 6, 7, 9 and 12 which are zone 10, zone 6, and zone 13
+
+## focus on district 10
+
+### raw frequencies
+
+#### correlation between different types (2001-2021, Pearson correlation)
+```{r, echo=FALSE}
+crimes_data_10<-as.data.frame(crimes_data[which(crimes_data$District=='010'),])
+```
+
+```{r, echo=FALSE}
+a<-aggregate(crimes_data_10$`Primary Type`,by=list(year=crimes_data_10$year, type=crimes_data_10$`Primary Type`),length)
+
+type_ts<-as.data.frame(unique(a$year))
+colnames(type_ts)<-"year"
+for (i in 1:length(unique(a$type))){
+  b<-subset(a[which(a$type==unique(a$type)[i]),])
+  type_ts<-merge(type_ts,b[,c(1,3)],by="year",all=TRUE)
+  colnames(type_ts)[(i+1)]<-unique(a$type)[i]
+}
+
+b<-type_ts
+rownames(b)<-b$year
+b<-b[,-1]
+b[is.na(b)]<-0
+
+#png(file="corr_plot.png",width=3000,height=3000)
+col <- colorRampPalette(c("#BB4444", "#EE9988", "#FFFFFF", "#77AADD", "#4477AA"))
+corrplot(cor(b), method="color", col=col(200),
+         order="hclust",
+         addCoef.col = "black",number.cex = 0.5, #添加相关系数
+         tl.col="black", tl.srt=45,tl.cex=0.8 #修改字体
+         )
+```
+
+### correlation higher than 0.9
+```{r,echo=FALSE}
+
+a<-as.matrix(cor(b))
+
+df<-data.frame(idrow=rep(rownames(a),ncol(a)),
+    idcol=rep(colnames(a),each=nrow(a)),
+    value=as.vector(a))
+
+rm=which(df$value==1)
+df=df[-rm,]
+c<-df[df$value>=0.9,]
+d<-c[order(c$value,decreasing = T),]
+e<-d[!duplicated(d$value),]
+kable(e)
+```
+
+## ARIMA-GARCH model (use weapon and narcotics data, ARIMA-GARCH model defined before)(which data to use??)
+```{r,echo=FALSE}
+crimes_data_10<-as.data.frame(crimes_data[which(crimes_data$District=='010'),])
+crimes_data_10$day<-date(as.Date(unlist(crimes_data_10$Date),"%m/%d/%Y"))
+crimes_data_10_day<-crimes_data_10[,c(11, 3,8,9)]
+
+a<-aggregate(crimes_data_10_day$`Primary Type`,by=list(day=crimes_data_10_day$day, type=crimes_data_10_day$`Primary Type`),length)
+
+type_ts<-as.data.frame(unique(a$day))
+colnames(type_ts)<-"day"
+for (i in 1:length(unique(a$type))){
+  b<-subset(a[which(a$type==unique(a$type)[i]),])
+  type_ts<-merge(type_ts,b[,c(1,3)],by="day",all=TRUE)
+  colnames(type_ts)[(i+1)]<-unique(a$type)[i]
+}
+
+b<-type_ts
+rownames(b)<-b$day
+b<-b[,-1]
+b[is.na(b)]<-0
+```
+
+```{r, echo=FALSE}
+weapon_narcotics<-b[,c("NARCOTICS" , "WEAPONS VIOLATION")]
+weapon_narcotics$date<-rownames(weapon_narcotics)
+narcotics<-weapon_narcotics[,c(3,1)]
+weapon<-weapon_narcotics[,c(3,2)]
+
+```
+
+
+```{r,echo=FALSE}
+
+MP = function(zone){
+  
+  colnames(zone)<-c("date","num_bpc")
+  
+  
+  # plot time series
+  ggplot(data = zone, aes(x=as.Date(date), y=num_bpc)) +  
+    geom_line()+
+    ggtitle("Zone_1")
+  
+  # plot ACF, PACF 
+  par(mfrow=c(1,2))
+  acf(zone$num_bpc, lag.max = 20, main="ACF(20)")
+  pacf(zone$num_bpc, lag.max = 20, main="PACF(20)")
+  
+  # stationary test
+  cat("Conduct stationary test:","\n")
+  library(urca)
+  
+  print(summary(ur.kpss(zone$num_bpc)))
+  
+  teststata = ur.kpss(zone$num_bpc) @teststat
+  cval = ur.kpss(zone$num_bpc) @cval[4]
+  
+  if (teststata > cval) {
+    cat("Test statistic is larger than critical value:","\n","\n")
+    cat("Timeseries are not stationary","\n","\n")
+    cat("Use diff to transfer data into stationary timeseries","\n","\n")
+    
+    # transfer nonstationary ts to stationary
+    tss<-ts(zone$num_bpc,freq=length(zone$num_bpc),start=1)
+    library(forecast)
+    cat("number of diff:",ndiffs(tss),"\n","\n")
+    ts_adj<-diff(tss,diff=ndiffs(tss))
+    
+    #check again
+    
+    cat("Conduct Stationary Test:","\n")
+    print(summary(ur.kpss(ts_adj)))
+    
+    teststata2 = ur.kpss(ts_adj) @teststat
+    cval2 = ur.kpss(ts_adj) @cval[4]
+    
+    if(teststata2 > cval2){
+      cat("Test statistic is larger than critical value:","\n","\n")
+      cat("Adjusted timeseries are not stationary","\n","\n")
+      return(message("Adjusted timeseries are not stationary"))
+    } else{
+      
+      cat("T-statistic is smaller than critical value:","\n","\n")
+      cat("Adjusted timeseries are stationary","\n","\n")
+      cat("Set up ARIMA model","\n","\n")
+    }
+    
+    
+  } else {
+    cat("T-statistic is smaller than critical value:","\n","\n")
+    cat("Timeseries are stationary","\n","\n")
+    cat("Set up ARIMA model","\n","\n")
+    ts_adj<-(zone$num_bpc)
+  }
+  
+  # ARIMA
+  fit<-auto.arima(ts_adj,seasonal = FALSE)
+  print(summary(fit))
+  
+  # Check Residual
+  cat("\n","Conduct residuals check:","\n","\n")
+  
+  print(Box.test(resid(fit),type="Ljung",lag=20))
+  
+  teststata3 = Box.test(resid(fit),type="Ljung",lag=20)$p.value
+  cval3 = 0.05 #
+  
+  if(teststata3 < cval3){
+    cat("P-value is small:","\n","\n")
+    cat("Reject null hypothesis: residuals are independent.","\n","\n")
+    cat("So residuals are not white-noise, and this ARIMA model is flawed.","\n","\n")
+    cat("Set up ARCH model","\n","\n")
+    
+    # Engle ARCH LM test
+    # Null hypothesis: no ARCH effects
+    
+    cat("Conduct Arch-LM test:","\n","\n")
+    library(FinTS)
+    
+    print(ArchTest(resid(fit)))
+    
+    teststata4 = ArchTest(resid(fit))$p.value
+    cval4 = 0.05 #
+    
+    if(teststata4<cval4){
+      cat("P-value is small:","\n","\n")
+      cat("Reject null hypothesis: no ARCH effects ","\n","\n")
+      cat("ARCH effects exist","\n","\n")
+      cat("Set up ARCH/GARCH model","\n","\n")
+      
+      library(rugarch)
+      spec = ugarchspec()
+      def.fit=ugarchfit(spec=spec, data=ts_adj)
+      print(def.fit)
+      cat("Forecast: ","\n","\n")       
+      ugarchforecast(def.fit, n.ahead=7, data=ts_adjust)
+      
+      
+    } else{
+      return(message("no suitable model"))
+    }
+    
+    
+  } else {
+    cat("P-value is larger than 0.05:","\n","\n")
+    print("Residuals are white-noise")
+    print("This ARIMA model is suitable")
+    fit<-auto.arima(ts_adj,seasonal = FALSE)
+    
+    plot(fit %>% forecast(h=10) %>% autoplot(include=80))
+  }
+  
+  
+  
+}
+```
+
+### narcotics ARIMA-GARCH model
+
+```{r, echo=FALSE}
+sma<-stats::filter(ts(narcotics)/144,filter=c(rep(1,144)))
+ggplot(data = weapon, aes(x=as.Date(narcotics[,1]), y=narcotics[,2])) +  
+  geom_line()+
+  geom_line(aes(y=sma[,2]),color="red")+
+  labs(x="date",y="num",title="narcotics")
+```
+
+```{r}
+MP(narcotics)
+narcotics_st<-ts_adj
+```
+
+### weapon ARIMA-GARCH model
+```{r, echo=FALSE}
+sma<-stats::filter(ts(weapon[,c(1,2)])/144,filter=c(rep(1,144)))
+ggplot(data = weapon, aes(x=as.Date(weapon[,1]), y=weapon[,2])) +  
+  geom_line()+
+  geom_line(aes(y=sma[,2]),color="red")+
+  labs(x="date",y="num",title="weapon")
+```
+
+```{r}
+MP(weapon)
+```
+
+### weapon-narcotics DCC model
+
+```{r, echo=FALSE}
+stationary=function(zone){
+  colnames(zone)<-c("date","num_bpc")
+  
+  # stationary test
+  cat("Conduct stationary test:","\n")
+  library(urca)
+  
+  print(summary(ur.kpss(zone$num_bpc)))
+  
+  teststata = ur.kpss(zone$num_bpc) @teststat
+  cval = ur.kpss(zone$num_bpc) @cval[4]
+  
+  if (teststata > cval) {
+    cat("Test statistic is larger than critical value:","\n","\n")
+    cat("Timeseries are not stationary","\n","\n")
+    cat("Use diff to transfer data into stationary timeseries","\n","\n")
+    
+    # transfer nonstationary ts to stationary
+    tss<-ts(zone$num_bpc,freq=length(zone$num_bpc),start=1)
+    library(forecast)
+    cat("number of diff:",ndiffs(tss),"\n","\n")
+    ts_adj<-diff(tss,diff=ndiffs(tss))
+    cat("adjusted time-series is stationary","\n","\n")
+  }else{
+    
+    cat("T-statistic is smaller than critical value:","\n","\n")
+    cat("Adjusted timeseries are stationary","\n","\n")
+  }
+  return(ts_adj)
+}
+```
+
+```{r,echo=FALSE}
+weapon_narcotics<-b[,c("NARCOTICS" , "WEAPONS VIOLATION")]
+weapon_narcotics$date<-rownames(weapon_narcotics)
+
+narcotics_st<-stationary(narcotics)
+weapon_st<-stationary(weapon)
+weapon_narcotics_st<-as.data.frame(cbind(narcotics_st,weapon_st))
+date<-rownames(weapon_narcotics)[-1]
+weapon_narcotics_st$date<-date
+weapon_narcotics_st<-xts(weapon_narcotics_st[,1:2],ymd(weapon_narcotics_st[,3]))
+
+sma<-stats::filter(ts(narcotics)/144,filter=c(rep(1,144)))
+plot(sma[,2])
+
+sma1<-stats::filter(ts(weapon)/140,filter=c(rep(1,144)))
+plot(sma1[,2])
+```

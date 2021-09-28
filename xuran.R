@@ -497,3 +497,557 @@ MP = function(z, data){
 }
 
 MP(13,Bpc_freq)
+
+
+library(DiagrammeR)
+
+grViz("digraph flowchart {
+      # node definitions with substituted label text
+      node [fontname = Helvetica, shape = rectangle]        
+      tab1 [label = '@@1']
+      node [fontname = Helvetica, shape = parallelogram]
+      tab2 [label = '@@2']
+      node [fontname = Helvetica, shape = diamond]  
+      tab3 [label = '@@3']
+      node [fontname = Helvetica, shape = rectangle]  
+      tab4 [label = '@@4']
+      node [fontname = Helvetica, shape = diamond]  
+      tab5 [label = '@@5']
+      node [fontname = Helvetica, shape = diamond]  
+      tab6 [label = '@@6']
+      node [fontname = Helvetica, shape = rectangle]        
+      tab7 [label = '@@7']
+      node [fontname = Helvetica, shape = parallelogram]
+      tab8 [label = '@@8']
+      node [fontname = Helvetica, shape = rectangle]        
+      tab9 [label = '@@9']
+      
+      node [fontname = Helvetica, shape = rectangle]        
+      tab10 [label = '@@10']
+
+      # edge definitions with the node IDs
+      tab1 -> tab2;
+      tab2 -> tab3;
+      tab3 -> tab4;
+      tab3 -> tab10;
+      tab10 -> tab4;
+      tab4 -> tab5;
+      tab5 -> tab6;
+      tab6 -> tab7;
+      tab7 -> tab8;
+      tab8 -> tab9;
+      tab5 -> tab8;
+      tab6 -> tab8;
+      }
+
+      [1]: 'Start'
+      [2]: 'Input data, zone'
+      [3]: 'Stationary?'
+      [4]: 'ARIMA model'
+      [5]: 'Residuals independent?'
+      [6]: 'ARCH effects?'
+      [7]: 'GARCH model'
+      [8]: 'Output GARCH/ARIMA model'
+      [9]: 'Stop'
+      [10]: 'Diff'
+      ")
+
+mermaid("
+graph TB
+  A(Start)-->B[Input data,zone]
+  B-->C{Stationary?}
+  C--Y-->D[ARIMA model]
+  C--N-->E[Diff]
+  E-->D
+  D-->F{Residuals independent?}
+  F--Y-->G[Output Model]
+  F--N-->H{ARCH effects?}
+  H--Y-->I[GARCH model]
+  H--N-->G
+  I-->G
+  G-->(Stop)
+")
+
+
+#crimes<-read_csv("/project/graziul/data/CPD/crime/Crimes_-_2001_to_Present.csv")
+#crimes_data<-crimes[,c(3,6,12,11,7,8,9,10)]
+#write.csv(crimes_data,"/home/xuranzeng/crimes_data.csv")
+crimes_data<-read_csv("/home/xuranzeng/crimes_data.csv",)
+
+
+crimes_data$year<-year(as.Date(unlist(crimes_data$Date),"%m/%d/%Y"))
+
+crimes_data_2018<-as.data.frame(crimes_data[which(crimes_data$year==2018),])
+crimes_data_2019<-as.data.frame(crimes_data[which(crimes_data$year==2019),])
+crimes_data_sample<-rbind(crimes_data_2018,crimes_data_2019)
+#write.csv(crimes_data_sample,"/home/xuranzeng/crimes_data_sample.csv")
+
+
+
+
+
+# adjust time zone
+Bpc_freq<-read_csv("/project/graziul/data/bpc_freq.csv")
+Bpc_freq$ts<-ymd_hm(unlist(Bpc_freq[,3]),tz="America/Chicago")
+
+
+#as.POSIXct(unlist(Bpc_freq[1,3]),origin = "1970-01-01")
+
+crimes_data_sample<-read_csv("/home/xuranzeng/crimes_data_sample.csv",)[,-1]
+#crimes_data_sample<-crimes_data_sample[,c(1,2,3)]
+crimes_data_sample[,1]<-as.POSIXct(crimes_data_sample$Date, format="%m/%d/%Y %I:%M:%S %p")
+
+# posixct to numeric
+
+
+Bpc_freq$time<-as.numeric(as_datetime(unlist(Bpc_freq$ts))) #CDT
+crimes_data_sample$time_numeric<-unlist(crimes_data_sample[,1]) #CDT
+
+#unlist(crimes_data_sample[1,1])
+
+#as.numeric(unlist(Bpc_freq$ts[1]))
+
+# label crimes_data_sample with time that could match bpc_num
+pb<-txtProgressBar(style = 3)
+start_time<-Sys.time()
+for (i in 1:as.numeric(lengths(Bpc_freq[,1])-1)){
+  crimes_data_sample[which(crimes_data_sample$time_numeric>= unlist(Bpc_freq[i,'time']) & crimes_data_sample$time_numeric < unlist(Bpc_freq[(i+1),'time'])),'time']<-unlist(Bpc_freq[i,'time'])
+  setTxtProgressBar(pb, i/as.numeric(lengths(Bpc_freq[,1])-1))
+}
+end_time<-Sys.time()
+close(pb)
+end_time-start_time
+
+b<-crimes_data_sample
+
+write.csv(b,"/home/xuranzeng/crimes_data_sample_labelled.csv")
+
+c<-subset(crimes_data_sample,!is.na(time))
+# merge all using the key:time
+a<-merge(c,Bpc_freq ,all=TRUE)
+write.csv(a,"/home/xuranzeng/crime_bpc_merge.csv")
+
+crime_bpc_merge<-a[,c(2,4,5,6,7,8,9,10,13,14,15,16)]
+colnames(crime_bpc_merge)[1]<-'Report_time'
+
+crime_bpc_merge$Bpc_time<-ymd_hm(unlist(crime_bpc_merge$file),tz="America/Chicago")
+
+crime_bpc_merge<-crime_bpc_merge[,c(13,1,12,3,9,2,4,5,6,7,8)]
+write.csv(crime_bpc_merge,"/home/xuranzeng/crime_bpc_merge.csv")
+num_report<-as.data.frame(table(crime_bpc_merge$Bpc_time))
+colnames(num_report)[1]<-'Bpc_time'
+
+pb<-txtProgressBar(style = 3)
+for (i in 1:length(num_report[,1])){
+  crime_bpc_merge[which(crime_bpc_merge[,1]==as.POSIXct(num_report[i,1])),'num_report']<-num_report[i,'Freq']
+  setTxtProgressBar(pb, i/as.numeric(lengths(Bpc_freq[,1])-1))
+}
+close(pb)  
+
+a<-crime_bpc_merge
+
+
+crime_bpc_merge[which(is.na(crime_bpc_merge[,'Report_time'])),'num_report']<-NA
+
+
+crime_bpc_merge<-crime_bpc_merge[,c(1,2,3,12,4,5,6,7,8,9,10,11)]
+write.csv(crime_bpc_merge,"/home/xuranzeng/crime_bpc_merge_num.csv")
+
+
+
+#numeric to time
+as.POSIXct(unlist(Bpc_freq[1:2,1]), origin="1899-12-30")
+as.POSIXct(1535778060, origin="1970-01-01")
+as.POSIXct(1533380820, origin="1970-01-01")
+
+# correlation
+crime_bpc_merge<-read_csv("/home/xuranzeng/crime_bpc_merge_num.csv")[-1]
+head(crime_bpc_merge)
+cor_crime_bpc<-unique(crime_bpc_merge[,c('Bpc_time','num_bpc','num_report')])
+
+smab<-stats::filter(ts(cor_crime_bpc[,c(1,2)])/1440,filter=c(rep(1,1440)))
+#plot(smab[,2])
+ggplot(data = cor_crime_bpc, aes(x=Bpc_time, y=num_bpc)) +  
+  geom_line()+
+  geom_line(aes(y=smab[,2]),color="red")+
+  ggtitle("num_bpc")
+
+smar<-stats::filter(ts(cor_crime_bpc[,c(1,3)])/3,filter=c(rep(1,3)))
+plot(smar[,2])
+plot(cor_crime_bpc[,c(1,3)])
+
+ggplot(data = cor_crime_bpc, aes(x=Bpc_time, y=num_report)) +  
+  geom_line()
+  #geom_line(aes(y=smab[,2]),color="red")+
+  #ggtitle("Zone_1")
+
+
+
+
+
+
+
+
+
+
+
+# draft
+
+# test
+crimes_data_sample<-read_csv("/home/xuranzeng/crimes_data_sample.csv",)
+crimes_data_sample<-crimes_data_sample[1:1000,c('Date','Primary Type','District')]
+a<-aggregate(crimes_data_sample$`Primary Type`,by=list(district=crimes_data_sample$District, type=crimes_data_sample$`Primary Type`),length)
+
+ggplot(data=a, aes(x=a$district, y=a$type))+
+  theme_bw(base_family = "STKaiti")+
+  geom_tile(aes(fill=a$x),colour="white")+
+  scale_fill_gradient(low="white", high="black")
+
+# 2001-2021
+crimes_data<-read_csv("/home/xuranzeng/crimes_data.csv",)
+crimes_data_sample<-crimes_data[,c('Date','Primary Type','District')]
+a<-aggregate(crimes_data_sample$`Primary Type`,by=list(district=crimes_data_sample$District, type=crimes_data_sample$`Primary Type`),length)
+
+ggplot(data=a, aes(x=district, y=type))+
+  theme_bw(base_family = "STKaiti")+
+  geom_tile(aes(fill=log(x)),colour="white")+
+  scale_fill_gradient(low="white", high="black")
+
+# 2018-2019
+crimes_data<-read_csv("/home/xuranzeng/crimes_data_sample.csv",)
+crimes_data_sample<-crimes_data[,c('Date','Primary Type','District')]
+a<-aggregate(crimes_data_sample$`Primary Type`,by=list(district=crimes_data_sample$District, type=crimes_data_sample$`Primary Type`),length)
+
+ggplot(data=a, aes(x=district, y=type))+
+  theme_bw(base_family = "STKaiti")+
+  geom_tile(aes(fill=log(x)),colour="white")+
+  scale_fill_gradient(low="white", high="black")+
+  ggtitle("2018-2019")
+
+# 2016-2021
+crimes_data<-read_csv("/home/xuranzeng/crimes_data.csv",)
+crimes_data$year<-year(as.Date(unlist(crimes_data$Date),"%m/%d/%Y"))
+crimes_data_2016_2021<-as.data.frame(crimes_data[which(crimes_data$year>2016),])
+crimes_data_sample<-crimes_data_2016_2021
+a<-aggregate(crimes_data_sample$`Primary Type`,by=list(district=crimes_data_sample$District, type=crimes_data_sample$`Primary Type`),length)
+
+
+# 2018-2021
+crimes_data<-read_csv("/home/xuranzeng/crimes_data.csv",)
+crimes_data$year<-year(as.Date(unlist(crimes_data$Date),"%m/%d/%Y"))
+crimes_data_2018_2021<-as.data.frame(crimes_data[which(crimes_data$year>2017),])
+crimes_data_sample<-crimes_data_2018_2021
+a<-aggregate(crimes_data_sample$`Primary Type`,by=list(district=crimes_data_sample$District, type=crimes_data_sample$`Primary Type`),length)
+
+
+ggplot(data=a, aes(x=district, y=type))+
+  theme_bw(base_family = "STKaiti")+
+  
+
+    geom_tile(aes(fill=log(x)),colour="white")+
+  scale_fill_gradient(low="white", high="black")+
+  ggtitle("2018-2021")
+
+# district 10
+
+crimes_data_10<-as.data.frame(crimes_data[which(crimes_data$District=='010'),])
+a<-aggregate(crimes_data_10$`Primary Type`,by=list(year=crimes_data_10$year, type=crimes_data_10$`Primary Type`),length)
+
+type_ts<-as.data.frame(unique(a$year))
+colnames(type_ts)<-"year"
+for (i in 1:length(unique(a$type))){
+  b<-subset(a[which(a$type==unique(a$type)[i]),])
+  type_ts<-merge(type_ts,b[,c(1,3)],by="year",all=TRUE)
+  colnames(type_ts)[(i+1)]<-unique(a$type)[i]
+}
+
+b<-type_ts
+rownames(b)<-b$year
+b<-b[,-1]
+b[is.na(b)]<-0
+#png(file="corr_plot.png",width=3000,height=3000)
+col <- colorRampPalette(c("#BB4444", "#EE9988", "#FFFFFF", "#77AADD", "#4477AA"))
+corrplot(cor(b), method="color", col=col(200),
+         order="hclust",
+         addCoef.col = "black",number.cex = 0.5, #添加相关系数
+         tl.col="black", tl.srt=45,tl.cex=0.8 #修改字体
+)
+a<-as.matrix(cor(b))
+
+df<-data.frame(idrow=rep(rownames(a),ncol(a)),
+               idcol=rep(colnames(a),each=nrow(a)),
+               value=as.vector(a))
+
+rm=which(df$value==1)
+df=df[-rm,]
+c<-df[df$value>=0.9,]
+d<-c[order(c$value,decreasing = T),]
+e<-d[!duplicated(d$value),]
+kable(e)
+
+# DCC
+crimes_data_10<-as.data.frame(crimes_data[which(crimes_data$District=='010'),])
+crimes_data_10$day<-date(as.Date(unlist(crimes_data_10$Date),"%m/%d/%Y"))
+crimes_data_10_day<-crimes_data_10[,c(11, 3,8,9)]
+
+a<-aggregate(crimes_data_10_day$`Primary Type`,by=list(day=crimes_data_10_day$day, type=crimes_data_10_day$`Primary Type`),length)
+
+type_ts<-as.data.frame(unique(a$day))
+colnames(type_ts)<-"day"
+for (i in 1:length(unique(a$type))){
+  b<-subset(a[which(a$type==unique(a$type)[i]),])
+  type_ts<-merge(type_ts,b[,c(1,3)],by="day",all=TRUE)
+  colnames(type_ts)[(i+1)]<-unique(a$type)[i]
+}
+
+b<-type_ts
+rownames(b)<-b$day
+b<-b[,-1]
+b[is.na(b)]<-0
+
+
+weapon_narcotics<-b[,c("NARCOTICS" , "WEAPONS VIOLATION")]
+weapon_narcotics$date<-rownames(weapon_narcotics)
+
+zone=narcotics
+
+sma<-stats::filter(ts(narcotics)/144,filter=c(rep(1,144)))
+ggplot(data = weapon, aes(x=as.Date(narcotics[,1]), y=narcotics[,2])) +  
+  geom_line()+
+  geom_line(aes(y=sma[,2]),color="red")+
+  labs(x="date",y="num")
+ggtitle("narcotics")
+
+stationary=function(zone){
+  colnames(zone)<-c("date","num_bpc")
+  
+  # stationary test
+  cat("Conduct stationary test:","\n")
+  library(urca)
+  
+  print(summary(ur.kpss(zone$num_bpc)))
+  
+  teststata = ur.kpss(zone$num_bpc) @teststat
+  cval = ur.kpss(zone$num_bpc) @cval[4]
+  
+  if (teststata > cval) {
+    cat("Test statistic is larger than critical value:","\n","\n")
+    cat("Timeseries are not stationary","\n","\n")
+    cat("Use diff to transfer data into stationary timeseries","\n","\n")
+    
+    # transfer nonstationary ts to stationary
+    tss<-ts(zone$num_bpc,freq=length(zone$num_bpc),start=1)
+    library(forecast)
+    cat("number of diff:",ndiffs(tss),"\n","\n")
+    ts_adj<-diff(tss,diff=ndiffs(tss))
+  }else{
+    
+    cat("T-statistic is smaller than critical value:","\n","\n")
+    cat("Adjusted timeseries are stationary","\n","\n")
+    cat("Set up ARIMA model","\n","\n")
+  }
+}
+
+MP = function(zone){
+  
+  colnames(zone)<-c("date","num_bpc")
+  
+  # plot ACF, PACF 
+  par(mfrow=c(1,2))
+  acf(zone$num_bpc, lag.max = 20, main="ACF(20)")
+  pacf(zone$num_bpc, lag.max = 20, main="PACF(20)")
+  
+  # stationary test
+  cat("Conduct stationary test:","\n")
+  library(urca)
+  
+  print(summary(ur.kpss(zone$num_bpc)))
+  
+  teststata = ur.kpss(zone$num_bpc) @teststat
+  cval = ur.kpss(zone$num_bpc) @cval[4]
+  
+  if (teststata > cval) {
+    cat("Test statistic is larger than critical value:","\n","\n")
+    cat("Timeseries are not stationary","\n","\n")
+    cat("Use diff to transfer data into stationary timeseries","\n","\n")
+    
+    # transfer nonstationary ts to stationary
+    tss<-ts(zone$num_bpc,freq=length(zone$num_bpc),start=1)
+    library(forecast)
+    cat("number of diff:",ndiffs(tss),"\n","\n")
+    ts_adj<-diff(tss,diff=ndiffs(tss))
+    
+    #check again
+    
+    cat("Conduct Stationary Test:","\n")
+    print(summary(ur.kpss(ts_adj)))
+    
+    teststata2 = ur.kpss(ts_adj) @teststat
+    cval2 = ur.kpss(ts_adj) @cval[4]
+    
+    if(teststata2 > cval2){
+      cat("Test statistic is larger than critical value:","\n","\n")
+      cat("Adjusted timeseries are not stationary","\n","\n")
+      return(message("Adjusted timeseries are not stationary"))
+    } else{
+      
+      cat("T-statistic is smaller than critical value:","\n","\n")
+      cat("Adjusted timeseries are stationary","\n","\n")
+      cat("Set up ARIMA model","\n","\n")
+    }
+    
+    
+  } else {
+    cat("T-statistic is smaller than critical value:","\n","\n")
+    cat("Timeseries are stationary","\n","\n")
+    cat("Set up ARIMA model","\n","\n")
+    ts_adj<-(zone$num_bpc)
+  }
+  
+  # ARIMA
+  fit<-auto.arima(ts_adj,seasonal = FALSE)
+  print(summary(fit))
+  
+  # Check Residual
+  cat("\n","Conduct residuals check:","\n","\n")
+  
+  print(Box.test(resid(fit),type="Ljung",lag=20))
+  
+  teststata3 = Box.test(resid(fit),type="Ljung",lag=20)$p.value
+  cval3 = 0.05 #
+  
+  if(teststata3 < cval3){
+    cat("P-value is small:","\n","\n")
+    cat("Reject null hypothesis: residuals are independent.","\n","\n")
+    cat("So residuals are not white-noise, and this ARIMA model is flawed.","\n","\n")
+    cat("Set up ARCH model","\n","\n")
+    
+    # Engle ARCH LM test
+    # Null hypothesis: no ARCH effects
+    
+    cat("Conduct Arch-LM test:","\n","\n")
+    library(FinTS)
+    
+    print(ArchTest(resid(fit)))
+    
+    teststata4 = ArchTest(resid(fit))$p.value
+    cval4 = 0.05 #
+    
+    if(teststata4<cval4){
+      cat("P-value is small:","\n","\n")
+      cat("Reject null hypothesis: no ARCH effects ","\n","\n")
+      cat("ARCH effects exist","\n","\n")
+      cat("Set up ARCH/GARCH model","\n","\n")
+      
+      library(rugarch)
+      spec = ugarchspec()
+      def.fit=ugarchfit(spec=spec, data=ts_adj)
+      print(def.fit)
+      cat("Residuals nomorality test: ","\n","\n")
+      plot(def.fit,which=8)
+      plot(def.fit,which=9)
+      cat("Residuals correlation test: ","\n","\n")
+      plot(def.fit,which=11)
+      cat("Forecast: ","\n","\n")       
+      ugarchforecast(def.fit, n.ahead=7, data=ts_adjust)
+      
+      
+    } else{
+      return(message("no suitable model"))
+    }
+    
+    
+  } else {
+    cat("P-value is larger than 0.05:","\n","\n")
+    print("Residuals are white-noise")
+    print("This ARIMA model is suitable")
+    fit<-auto.arima(ts_adj,seasonal = FALSE)
+    
+    plot(fit %>% forecast(h=10) %>% autoplot(include=80))
+  }
+  
+
+  
+}
+
+narcotics<-weapon_narcotics[,c(3,1)]
+MP(narcotics)
+narcotics.fit<-def.fit
+narcotics_st<-stationary(narcotics)
+
+weapon<-weapon_narcotics[,c(3,2)]
+MP(weapon)
+weapon.fit<-def.fit
+weapon_st<-stationary(weapon)
+
+
+weapon_narcotics_st<-as.data.frame(cbind(narcotics_st,weapon_st))
+date<-rownames(weapon_narcotics)[-1]
+weapon_narcotics_st$date<-date
+weapon_narcotics_st<-xts(weapon_narcotics_st[,1:2],ymd(weapon_narcotics_st[,3]))
+
+plot(weapon_narcotics_st,col=c("black","blue"), main="Two types of reported crimes (diff)")
+
+sma<-stats::filter(ts(narcotics)/1440,filter=c(rep(1,1440)))
+plot(sma[,2])
+
+sma1<-stats::filter(ts(weapon)/1440,filter=c(rep(1,1440)))
+plot(sma1[,2])
+
+######################################### DCC  #########################
+library(ccgarch)
+a<-c(0, 0)
+A<-diag(c(0,0))
+B<-diag(c(0, 0))
+dcc.para<-c(0, 0)
+dcc.estimation(inia=a, iniA=A, iniB=B, dvar=weapon_narcotics_st, ini.dcc=dcc.para, model="diagonal")
+
+library(rmgarch)  
+install.packages("rmgarch")
+install.packages("rgl")
+library(gmp)  
+
+# specify i.i.d. model for the univariate time series
+ugarch_spec <- ugarchspec(mean.model = list(armaOrder = c(0,0), include.mean = FALSE), 
+                          variance.model = list(model = "sGARCH", garchOrder = c(1,1)))
+
+# specify DCC model
+dcc_spec <- dccspec(uspec = multispec(replicate(ugarch_spec, n = 2)),
+                    VAR = TRUE, lag = 3,
+                    model = "DCC", dccOrder = c(1,1))
+
+# estimate model
+garchdcc_fit <- dccfit(dcc_spec, data = weapon_narcotics_st, solver = "nlminb")
+garchdcc_fit
+
+
+ggplot(data = weapon, aes(x=as.Date(narcotics[,1]), y=narcotics[,2])) +  
+  geom_line()+
+  geom_line(aes(y=sma[,2]),color="red")+
+  labs(x="date",y="num")
+
+
+MP(narcotics)
+narcotics_st<-ts_adj
+
+
+
+
+
+#sum two dataframe
+crimes_data_10$day<-date(as.Date(unlist(crimes_data_10$Date),"%m/%d/%Y"))
+crimes_data_10_day<-crimes_data_10[,c(11, 3,8,9)]
+unique(crimes_data_10_day$day)[1]
+unique(crimes_data_10_day$`Primary Type`)[4]
+sample<-crimes_data_10_day[which(crimes_data_10_day$day==unique(crimes_data_10_day$day)[1]),]
+sample<-sample[which(sample$`Primary Type`==unique(crimes_data_10_day$`Primary Type`)[4]),]
+sum<-nrow(sample[which(sample$Arrest==TRUE & sample$Domestic==TRUE),])
+tot<-nrow(sample)
+port<-sum/tot
+
+type_ts1<-as.data.frame(unique(crimes_data_10_day$day))
+sample<-sample[which(sample$`Primary Type`==unique(crimes_data_10_day$`Primary Type`)[4]),]
+for (i in unique(crimes_data_10_day$day)){
+  sample<-crimes_data_10_day[which(crimes_data_10_day$day==i,]
+}
+
