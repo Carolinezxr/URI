@@ -1,0 +1,297 @@
+---
+title: "arrest domestic descriptive analysis"
+author: "XuranZeng"
+date: "10/6/2021"
+output: 
+  html_document: 
+    toc: true
+    theme: united
+---
+
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(fig.width=12, fig.height=3, fig.pash='Figs/', echo = TRUE, warning=FALSE, message=FALSE)
+```
+
+```{r, echo=FALSE}
+library(readr)
+#library(rmgarch,lib='~/R/x86_64-pc-linux-gnu-library/3.2/')
+library(rugarch)
+library(lubridate)
+library(zoo)
+library(xts)
+library(ggplot2)
+library(dplyr)
+library(knitr)
+library(corrplot)
+library(forecast)
+
+
+```
+
+```{r,echo=FALSE}
+# Input: dataframe of raw data (col:primary type, day)
+# Output: dataframe (col:types, row:day)
+# Functionality: transform the format of data, aggregata and sum to get daily time series of different types
+trans<-function(x){
+  a<-aggregate(x$`Primary Type`,by=list(day=x$day, type=x$`Primary Type`),length)
+  
+  type_ts2<-as.data.frame(unique(a$day))
+  colnames(type_ts2)<-"day"
+  for (i in 1:length(unique(a$type))){
+    b<-subset(a[which(a$type==unique(a$type)[i]),])
+    type_ts2<-merge(type_ts2,b[,c(1,3)],by="day",all=TRUE)
+    colnames(type_ts2)[(i+1)]<-unique(a$type)[i]
+  }
+  
+  b<-type_ts2
+  rownames(b)<-b$day
+  b<-b[,-1]
+}
+```
+
+```{r, echo=FALSE}
+# Input: time series (col: type, row:day/month/week/...)
+# Output: correlation matrix
+# Functionality: Compute correlation coefficient and p-value
+
+corstars <-function(x, method=c("pearson", "spearman"), removeTriangle=c("upper", "lower"),
+                    result=c("none", "html", "latex")){
+  #Compute correlation matrix
+  #require(Hmisc)
+
+  library(rstatix)
+  R <- cor_mat(x) # Matrix of correlation coefficients
+  p <- cor_get_pval(R) # Matrix of p-value 
+  
+  ## Define notions for significance levels; spacing is important.
+  mystars <- ifelse(p < .0001, "****", ifelse(p < .001, "*** ", ifelse(p < .01, "**  ", ifelse(p < .05, "*   ", "    "))))
+  mystars<-mystars[,-1]
+  ## trunctuate the correlation matrix to two decimal
+  R <- format(round(cbind(rep(-1.11, ncol(x)), R)[,-2], 2))[,-1]
+  
+  ## build a new matrix that includes the correlations with their appropriate stars
+  Rnew<-R
+  for (i in 1:nrow(R)){
+    Rnew[i,]<-paste(R[i,], mystars[i,], sep="")
+  }
+  
+  ## remove upper triangle of correlation matrix
+if(removeTriangle[1]=="upper"){
+  Rnew <- as.matrix(Rnew)
+  Rnew[upper.tri(Rnew, diag = TRUE)] <- ""
+  Rnew <- as.data.frame(Rnew)
+}
+
+## remove lower triangle of correlation matrix
+else if(removeTriangle[1]=="lower"){
+  Rnew <- as.matrix(Rnew)
+  Rnew[lower.tri(Rnew, diag = TRUE)] <- ""
+  Rnew <- as.data.frame(Rnew)
+}
+  
+  rownames(Rnew) <- colnames(x)
+  return(Rnew)
+
+}
+
+```
+
+# different districts
+
+## raw frequencies
+```{r, echo=FALSE, fig.height=5}
+# time: entire sample
+# log(num_reported_crime)
+crimes_data<-read_csv("/home/xuranzeng/project/crimes_data.csv",)
+crimes_data$day<-date(as.Date(unlist(crimes_data$Date),"%m/%d/%Y"))
+crimes_data_sample<-crimes_data[,c(10, 3,4,8,9)]
+crimes_types<-c("ASSAULT","BATTERY" , "HOMICIDE", "ROBBERY" )
+```
+
+```{r, echo=FALSE}
+raw_frequency<-subset(crimes_data_sample[which(crimes_data_sample$`Primary Type`  %in% crimes_types),])
+raw_frequency_plot<-aggregate(raw_frequency$`Primary Type`,by=list(district=raw_frequency$District, type=raw_frequency$`Primary Type`),length)
+raw_frequency_plot$x<-log(raw_frequency_plot$x)
+```
+
+```{r, echo=FALSE}
+data<-raw_frequency_plot
+colnames(data)<-c("district","type","x")
+
+ggplot(data=data, aes(x=district, y=type))+
+    theme_bw(base_family = "STKaiti")+
+    geom_tile(aes(fill=x),colour="white")+
+    geom_text(aes(label = round(x, 1)), size = 3.5) +
+    scale_fill_gradient(low="white", high="steelblue")+
+    ggtitle("2001-2021")+
+    coord_fixed()
+```
+
+1-The districts where the police are under greatest stress are 11, 7,6,4.\
+2-The districts where the police are under greatest stress are 20, 1.\
+3-There exists correlation between crimes. The district with most homicide(11) also has almost most battery, assault and robbery. The district with least homicide(20) has least battery, assault, and robbery.
+
+
+```{r, echo=FALSE}
+b<-aggregate(raw_frequency$`Primary Type`,by=list(district=raw_frequency$District, type=raw_frequency$`Primary Type`, arrest=raw_frequency$Arrest),length)
+true<-b[which(b$arrest==TRUE),]
+colnames(true)<-c("district","type","arrest","true")
+
+all<-aggregate(raw_frequency$`Primary Type`,by=list(district=raw_frequency$District, type=raw_frequency$`Primary Type`),length)
+colnames(all)<-c("district","type","all")
+arrest<-merge(all,true,all = TRUE)
+arrest<-na.omit(arrest)
+arrest$rate<-round(arrest$true/arrest$all,2)
+```
+
+## arrest reports
+```{r, echo=FALSE}
+arrest_reports<-arrest[,c("district","type","true")]
+arrest_reports$true<-log(arrest_reports$true)
+data<-arrest_reports
+colnames(data)<-c("district","type","x")
+
+ggplot(data=data, aes(x=district, y=type))+
+    theme_bw(base_family = "STKaiti")+
+    geom_tile(aes(fill=x),colour="white")+
+    geom_text(aes(label = round(x, 1)), size = 3.5) +
+    scale_fill_gradient(low="white", high="steelblue")+
+    ggtitle("2001-2021")+ 
+    theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(), panel.background = element_blank())+
+    coord_fixed()
+```
+
+## arrest rates
+```{r, echo=FALSE}
+arrest_rate<-arrest[,c("district","type","rate")]
+data<-arrest_rate
+colnames(data)<-c("district","type","x")
+
+ggplot(data=data, aes(x=district, y=type))+
+    theme_bw(base_family = "STKaiti")+
+    geom_tile(aes(fill=x),colour="white")+
+    geom_text(aes(label = round(x, 2)), size = 3.5) +
+    scale_fill_gradient(low="white", high="steelblue")+
+    ggtitle("2001-2021")+ 
+    theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(), panel.background = element_blank())+
+    coord_fixed()
+```
+
+From the perspective of districts:\
+1-Districts with fewer crimes reports (1,16,17,18,19,20,23) have higher arrest rates.\
+2-Districts with more reports(11,7,6,4) have lower arrest rates.\
+3-Does the low arrest rate mean that some reported crimes did not occur? Or it is because they actually occurred but the police failed to arrest? I do not understand the label "arrest", it is an action or a result?\
+From the perspective of types:\
+1-Homicide has least reports but highest arrest rates, and homicide is the type of crime which put most stress on police. Is the high arrest rate means that the police pay most attention on it? They work best under greatest stress? \
+
+## domestic reports
+```{r, echo=FALSE}
+b<-aggregate(raw_frequency$`Primary Type`,by=list(district=raw_frequency$District, type=raw_frequency$`Primary Type`, Domestic=raw_frequency$Domestic),length)
+true<-b[which(b$Domestic==TRUE),]
+colnames(true)<-c("district","type","Domestic","true")
+
+Domestic<-merge(all,true,all = TRUE)
+Domestic<-na.omit(Domestic)
+Domestic$rate<-round(Domestic$true/Domestic$all,2)
+  
+Domestic_rate<-Domestic[,c("district","type","rate")]
+```
+
+```{r, echo=FALSE}
+Domestic_reports<-arrest[,c("district","type","true")]
+Domestic_reports$true<-log(Domestic_reports$true)
+data<-Domestic_reports
+colnames(data)<-c("district","type","x")
+
+ggplot(data=data, aes(x=district, y=type))+
+    theme_bw(base_family = "STKaiti")+
+    geom_tile(aes(fill=x),colour="white")+
+    geom_text(aes(label = round(x, 1)), size = 3.5) +
+    scale_fill_gradient(low="white", high="steelblue")+
+    ggtitle("2001-2021")+ 
+    theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(), panel.background = element_blank())+
+    coord_fixed()
+```
+
+## domestic rates
+```{r, echo=FALSE}
+data<-Domestic_rate
+colnames(data)<-c("district","type","x")
+
+ggplot(data=data, aes(x=district, y=type))+
+    theme_bw(base_family = "STKaiti")+
+    geom_tile(aes(fill=x),colour="white")+
+    geom_text(aes(label = round(x, 2)), size = 3.5) +
+    scale_fill_gradient(low="white", high="steelblue")+
+    ggtitle("2001-2021")+ 
+    theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank(), panel.background = element_blank())+
+    coord_fixed()
+```
+
+notes for me: Assault is threat of violence. Battery is physical contact that causes bodily harm.\
+
+# different types
+
+## raw frequencies
+
+```{r, echo=FALSE}
+raw_frequency_ts<-trans(raw_frequency)
+raw_frequency_ts[is.na(raw_frequency_ts)]<-0
+corstars(raw_frequency_ts,removeTriangle="lower")
+```
+
+1-Homicide has not strong correlation with other types of crime. But in the first figure(raw frequencies heat map), it seems that district with more homicide has also more robbery, assault, and robbery, and vice versa. Why?\
+2-The patterns of correlation matrix are similar using different data.\
+
+## arrest reports
+
+```{r, echo=FALSE}
+arrest_report2<-subset(raw_frequency[which(raw_frequency$Arrest == TRUE),])
+arrest_reports_ts<-trans(arrest_report2)
+arrest_reports_ts[is.na(arrest_reports_ts)]<-0
+```
+
+```{r, echo=FALSE}
+corstars(arrest_reports_ts,removeTriangle="lower")
+```
+
+## arrest arrest
+
+```{r, echo=FALSE}
+rate<-cbind(arrest_reports_ts,raw_frequency_ts)
+rate[is.na(rate)]<-0
+arrest_rates_ts<-arrest_reports_ts
+arrest_rates_ts[,]<-NA
+arrest_rates_ts[,1:4]<-round(rate[,1:4]/rate[,5:8],2)
+arrest_rates_ts[is.na(arrest_rates_ts)]<-0
+```
+
+```{r, echo=FALSE}
+corstars(arrest_rates_ts,removeTriangle="lower")
+```
+
+## domestic reports
+
+```{r, echo=FALSE}
+domestic_report2<-subset(raw_frequency[which(raw_frequency$Domestic == TRUE),])
+domestic_reports_ts<-trans(domestic_report2)
+```
+
+```{r, echo=FALSE}
+corstars(domestic_reports_ts,removeTriangle="lower")
+```
+
+## domestic arrest
+
+```{r, echo=FALSE}
+rate<-cbind(domestic_reports_ts,raw_frequency_ts)
+rate[is.na(rate)]<-0
+domestic_rates_ts<-domestic_reports_ts
+domestic_rates_ts[,]<-NA
+domestic_rates_ts[,1:4]<-round(rate[,1:4]/rate[,5:8],2)
+domestic_rates_ts[is.na(domestic_rates_ts)]<-0
+```
+
+```{r, echo=FALSE}
+corstars(domestic_rates_ts,removeTriangle="lower")
+```
