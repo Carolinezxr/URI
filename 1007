@@ -1,0 +1,250 @@
+---
+title: "arrest domestic descriptive analysis"
+author: "XuranZeng"
+date: "10/6/2021"
+output: 
+  html_document: 
+    toc: true
+    theme: united
+---
+
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(fig.width=12, fig.height=3, fig.pash='Figs/', echo = TRUE, warning=FALSE, message=FALSE)
+```
+
+```{r, echo=FALSE}
+library(readr)
+#library(rmgarch,lib='~/R/x86_64-pc-linux-gnu-library/3.2/')
+library(rugarch)
+library(lubridate)
+library(zoo)
+library(xts)
+library(ggplot2)
+library(dplyr)
+library(knitr)
+library(corrplot)
+library(forecast)
+library(rmgarch)
+library(xtable)
+library(fBasics)
+library(car)
+library(date)
+library(parallel)
+library(forecast)
+library(tseries)
+```
+
+```{r}
+raw_frequency_ts<-read_csv("E:/data/raw_frequency_ts.csv",)
+
+colnames(raw_frequency_ts)<-c("day","ASSAULT",  "BATTERY" , "HOMICIDE", "ROBBERY")
+
+raw_frequency_ts<-as.data.frame(raw_frequency_ts)
+
+
+
+raw_frequency_growth_ts<-raw_frequency_ts
+raw_frequency_growth_ts[,-1]<-NA
+raw_frequency_growth_ts[-1,2]<-as.data.frame(diff(unlist(raw_frequency_ts[,2])))
+raw_frequency_growth_ts[-1,3]<-as.data.frame(diff(unlist(raw_frequency_ts[,3])))
+raw_frequency_growth_ts[-1,4]<-as.data.frame(diff(unlist(raw_frequency_ts[,4])))
+raw_frequency_growth_ts[-1,5]<-as.data.frame(diff(unlist(raw_frequency_ts[,5])))
+raw_frequency_growth_ts<-na.omit(raw_frequency_growth_ts)
+
+raw_frequency_growth_ts[,-1] <- as.numeric(unlist(raw_frequency_growth_ts[,-1]))
+
+#raw_frequency_growth_ts<-as.xts(raw_frequency_growth_ts[,-1],raw_frequency_growth_ts[,1])
+```
+
+```{r, echo=FALSE}
+par(mfrow=c(2,2))
+data<-raw_frequency_ts
+
+ASSAULT <- xts(data$ASSAULT, data$day)
+ts.plot(ASSAULT)
+
+BATTERY <- xts(data$BATTERY, data$day)
+ts.plot(BATTERY)
+
+HOMICIDE <- xts(data$HOMICIDE, data$day)
+ts.plot(HOMICIDE)
+
+ROBBERY <- xts(data$ROBBERY, data$day)
+ts.plot(ROBBERY)
+```
+
+```{r, echo=FALSE}
+MARKET <- xts(cbind(ASSAULT, BATTERY, HOMICIDE, ROBBERY), index(ROBBERY))
+par(mfrow=c(1,1))
+plot(
+  MARKET, 
+  main="Amount of Different Types",
+  major.ticks="years", minor.ticks=NULL, 
+  grid.ticks.on="years",
+  col=c("#DE7A22", "#F4CC70", "#20948B", "#6AB187")
+)
+```
+
+```{r}
+#Calcuate the log-return of all major markets
+market <- MARKET
+#When we take the difference, the first element of the original table will be zero.
+logreturn <- diff(market)[-1, ]
+#length(logreturn$ASSAULT)
+return.train = logreturn[c(1:360),]
+```
+
+```{r, echo=FALSE}
+#Test Stationarity
+par(mfrow=c(4,1))
+
+# ASSAULT
+ts.plot(return.train$ASSAULT,
+        xlab="04/19/2013 - 03/06/2020",
+        ylab="ASSAULT", col="#CE5A57")
+adf.test(return.train$ASSAULT)
+kpss.test(return.train$ASSAULT)
+
+# BATTERY
+ts.plot(return.train$BATTERY,
+        xlab="04/19/2013 - 03/06/2020",
+        ylab="BATTERY",col="#F4CC70")
+adf.test(return.train$BATTERY)
+kpss.test(return.train$BATTERY)
+
+# HOMICIDE
+ts.plot(return.train$HOMICIDE,
+        xlab="04/19/2013 - 03/06/2020",
+        ylab="HOMICIDE",col="#444C5C")
+adf.test(return.train$HOMICIDE)
+kpss.test(return.train$HOMICIDE)
+
+# ROBBERY
+ts.plot(return.train$ROBBERY,
+        xlab="04/19/2013 - 03/06/2020",
+        ylab="ROBBERY", col="#6AB187")
+adf.test(return.train$ROBBERY)
+kpss.test(return.train$ROBBERY)
+
+```
+
+```{r, echo=FALSE}
+#Mean Process Filtering using ARMA
+ASSAULT_arma <- auto.arima(return.train$ASSAULT, stationary = T, seasonal = F, ic = "aic", allowdrift = FALSE, trace = TRUE)
+##ASSAULT ARMA(2,1)
+BATTERY_arma <- auto.arima(return.train$BATTERY, stationary = T, seasonal = F, ic = "aic", allowdrift = FALSE, trace = TRUE)
+##BATTERY ARMA(2,1)
+HOMICIDE_arma <- auto.arima(return.train$HOMICIDE, stationary = T, seasonal = F, ic = "aic", allowdrift = FALSE, trace = TRUE)
+##HOMICIDE ARMA(0,1) or ARMA(1,1)
+ROBBERY_arma <- auto.arima(return.train$ROBBERY, stationary = T, seasonal = F, ic = "aic", allowdrift = FALSE, trace = TRUE)
+##ROBBERY ARMA(1,1) or ARMA(0,1)
+
+#Check the distributions of the residuals
+# ASSAULT
+checkresiduals(ASSAULT_arma)
+shapiro.test(ASSAULT_arma$residuals)
+##The residuals are not normally distributed.
+# BATTERY
+checkresiduals(BATTERY_arma)
+shapiro.test(BATTERY_arma$residuals)
+##The residuals are not normally distributed.
+# HOMICIDE
+checkresiduals(HOMICIDE_arma)
+shapiro.test(HOMICIDE_arma$residuals)
+##The residuals are not normally distributed.
+# ROBBERY
+checkresiduals(ROBBERY_arma)
+shapiro.test(ROBBERY_arma$residuals)
+##The residuals are not normally distributed.
+
+for(i in 1:4) print(Box.test(ASSAULT_arma$residuals, lag = 5*i, type =  "Ljung-Box"))
+for(i in 1:4) print(Box.test(BATTERY_arma$residuals, lag = 5*i, type =  "Ljung-Box"))
+for(i in 1:4) print(Box.test(HOMICIDE_arma$residuals, lag = 5*i, type =  "Ljung-Box"))
+for(i in 1:4) print(Box.test(ROBBERY_arma$residuals, lag = 5*i, type =  "Ljung-Box"))
+
+r_ASSAULT <- ASSAULT_arma$residuals
+r_BATTERY <- BATTERY_arma$residuals
+r_HOMICIDE <- HOMICIDE_arma$residuals
+r_ROBBERY <- ROBBERY_arma$residuals
+
+par(mfrow=c(4,1))
+plot(r_ASSAULT, main="ASSAULT", 
+     xlab="04/19/2013 - 03/06/2020",
+     ylab="Residuals")
+plot(r_BATTERY, main="BATTERY", 
+     xlab="04/19/2013 - 03/06/2020",
+     ylab="Residuals")
+plot(r_HOMICIDE, main="HOMICIDE", 
+     xlab="04/19/2013 - 03/06/2020",
+     ylab="Residuals")
+plot(r_ROBBERY, main="ROBBERY", 
+     xlab="04/19/2013 - 03/06/2020",
+     ylab="Residuals")
+
+plot(r_ASSAULT^2, main="ASSAULT", 
+     xlab="04/19/2013 - 03/06/2020",
+     ylab="Residuals^2")
+plot(r_BATTERY^2, main="BATTERY", 
+     xlab="04/19/2013 - 03/06/2020",
+     ylab="Residuals^2")
+plot(r_HOMICIDE^2, main="HOMICIDE", 
+     xlab="04/19/2013 - 03/06/2020",
+     ylab="Residuals^2")
+plot(r_ROBBERY^2, main="ROBBERY", 
+     xlab="04/19/2013 - 03/06/2020",
+     ylab="Residuals^2")
+
+ArchTest(r_ASSAULT)
+##ASSAULT with ARCH effect
+
+ArchTest(r_BATTERY)
+##BATTERY with no ARCH effect
+
+ArchTest(r_HOMICIDE)
+##HOMICIDE with ARCH effect
+
+ArchTest(r_ROBBERY)
+##ROBBERY with ARCH effect
+
+
+#Fit Univariate GARCH Models
+# For ASSAULT and BATTERY
+ugarch.spec1 <- ugarchspec(variance.model=list(garchOrder=c(1,1)), 
+                          mean.model=list(armaOrder=c(2,1)),
+                          distribution.model = "sstd")
+
+ASSAULT_garch <- ugarchfit(spec = ugarch.spec1, data = return.train$ASSAULT)
+ASSAULT_garch
+
+BATTERY_garch <- ugarchfit(spec = ugarch.spec1, data = return.train$BATTERY)
+BATTERY_garch
+
+# For HOMICIDE
+ugarch.spec2 <- ugarchspec(variance.model=list(garchOrder=c(1,1)), 
+                           mean.model=list(armaOrder=c(0,1)),
+                           distribution.model = "sstd")
+HOMICIDE_garch <- ugarchfit(spec = ugarch.spec2, data = return.train$HOMICIDE)
+HOMICIDE_garch
+
+# For ROBBERY
+ugarch.spec3 <- ugarchspec(variance.model=list(garchOrder=c(1,1)), 
+                           mean.model=list(armaOrder=c(1,1)),
+                           distribution.model = "sstd")
+ROBBERY_garch <- ugarchfit(spec = ugarch.spec3, data = return.train$ROBBERY)
+ROBBERY_garch
+```
+
+```{r, include=FALSE}
+library(rmgarch)
+garch11.spec = ugarchspec(mean.model = list(armaOrder =c(0,0)),variance.model = list(garchOrder = c(1,1), model = "sGARCH"),distribution.model = "norm")
+
+dcc.garch11.spec=dccspec(uspec=multispec(replicate(4, garch11.spec)),dccOrder = c(1,1),distribution = "mvnorm")
+
+dcc.garch11.spec
+
+
+dcc.fit=dccfit(dcc.garch11.spec, data=raw_frequency_growth_ts[,-1])
+
+dcc.fit
+```
+
