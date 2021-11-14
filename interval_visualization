@@ -1,0 +1,24 @@
+library(readr)
+library(ggplot2)
+library(dplyr)
+library(forcats)
+
+df<-read.csv("E:\\notebook\\data\\features.csv")
+
+df1<-as.data.frame(t(df))[-1,]
+df1$name<-rownames(df1)
+
+
+i=16
+ggplot(data = df1, aes(x=name, y=df1[,i])) +
+  geom_bar(stat="identity", fill="#f68060", alpha=.6, width=.4) +
+  coord_flip() +
+  ylab("average_TEO") +
+  xlab("interval")+
+  ggtitle(paste("CB",i,sep=""))+
+  geom_text(mapping = aes(label = round(df1[,i],2)))+
+  theme_bw()
+
+library("gridExtra")
+grid.arrange(CB1, CB2,
+             ncol = 4, nrow = 2)
