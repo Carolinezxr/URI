@@ -1,0 +1,273 @@
+---
+title: "windows"
+author: "XuranZeng"
+date: "11/11/2021"
+output: html_document
+---
+
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(fig.width=12, fig.height=3, fig.pash='Figs/', echo = TRUE, warning=FALSE, message=FALSE)
+```
+
+```{r, echo=FALSE}
+library(readr)
+library(lubridate)
+library(ggplot2)
+library(dplyr)
+library(knitr)
+library(RcppRoll)
+```
+
+
+
+# Data / Function description
+path: /project/graziul/ra/xuranzeng/windows
+
+raw_crimes_beat_transfer.csv: time series of # daily reported crimes each beat
+
+raw_crimes_beat_roll_sum_30.csv: 30-day rolling window of # daily reported crimes each beat
+
+raw_crimes_beat_roll_vol_30.csv: 30-day rolling window of daily reported crimes volatility each beat
+
+raw_crimes_beat_roll_sum_7.csv: 7-day rolling window of # daily reported crimes each beat
+
+raw_crimes_beat_roll_vol_7.csv: 7-day rolling window of daily reported crimes volatility each beat
+
+roll_30_summary.csv: max-sum-window, max-num, max-volatility-window, max-volatility of each beat (30 days)
+
+roll_7_summary.csv: max-sum-window, max-num, max-volatility-window, max-volatility of each beat (7 days)
+
+
+homicide_crimes_beat_transfer.csv: time series of # daily reported homicides each beat
+
+homicide_crimes_beat_roll_sum_30.csv: 30-day rolling window of # daily reported homicide each beat
+
+homicide_crimes_beat_roll_vol_30.csv: 30-day rolling window of daily reported homicide volatility each beat
+
+homicide_crimes_beat_roll_sum_7.csv: 7-day rolling window of # daily reported homicide each beat
+
+homicide_crimes_beat_roll_vol_7.csv: 7-day rolling window of daily reported homicide volatility each beat
+
+homicide_roll_30_summary.csv: max-sum-window, max-num, max-volatility-window, max-volatility of each beat (30 days)
+
+homicide_roll_7_summary.csv: max-sum-window, max-num, max-volatility-window, max-volatility of each beat (7 days)
+
+
+
+roll_sum_i: input ts data and length of window (30 / 7), output rolling sum
+
+roll_vol_i: input ts data and length of window (30 / 7), output rolling standard deviation
+
+roll_summary: input rolling sum data and length of window (30 / 7), output summary of rolling sum (max-window, max-num, min-window, min-num of each beat)
+
+plot_max: input rolling sum data and the beat, output ts plot,max sum window, max # reports of that beat, max volatility window, max volatility of that beat
+
+```{r, echo=FALSE}
+roll_sum_i<-function(data, i){
+  roll_sum_30<-as.data.frame(data[i:nrow(data),'Date'])
+  rownames(roll_sum_30)<-roll_sum_30[,1]
+  raw_crimes2<-data[,3:ncol(data)]
+  for (j in 1:ncol(raw_crimes2)){
+  roll_sum_30[,j]<-roll_sum(unlist(raw_crimes2[,j]),n=i)
+  #cat("merging:",i,'\n')
+  }
+  colnames(roll_sum_30)<-colnames(raw_crimes2)
+  return(roll_sum_30)
+}
+```
+
+```{r, echo=FALSE}
+roll_vol_i<-function(data, i){
+  roll_vol_30<-as.data.frame(data[i:nrow(data),'Date'])
+  rownames(roll_vol_30)<-roll_vol_30[,1]
+  raw_crimes2<-data[,3:ncol(data)]
+  for (j in 1:ncol(raw_crimes2)){
+    roll_vol_30[,j]<-roll_sd(unlist(raw_crimes2[,j]),n=i)
+  }
+  colnames(roll_vol_30)<-colnames(raw_crimes2)
+  return(roll_vol_30)
+}
+```
+
+```{r, echo=FALSE}
+roll_summary<-function(datasum,datavol,interval){
+  roll_sum_30_summary<-as.data.frame(colnames(datasum))
+  
+  max_sum_window<-NA
+  max_num<-NA
+  for (i in 1:ncol(datasum)){
+    beat<-colnames(datasum)[i]
+    max<-which.max(datasum[,beat])
+    max_sum_window[i]<-paste(rownames(datasum)[max-interval],rownames(datasum)[max],sep = '-')
+    max_num[i]<-datasum[max,beat]
+  }
+
+  
+  roll_sum_30_summary$max_sum_window<-max_sum_window
+  roll_sum_30_summary$max_num<-max_num
+  
+  max_vol_window<-NA
+  max_vol<-NA
+  for (i in 1:ncol(datavol)){
+    beat<-colnames(datavol)[i]
+    max<-which.max(datavol[,beat])
+    max_vol_window[i]<-paste(rownames(datavol)[max-interval],rownames(datavol)[max],sep = '-')
+    max_vol[i]<-datavol[max,beat]
+  }
+
+  
+  roll_sum_30_summary$max_vol_window<-max_vol_window
+  roll_sum_30_summary$max_vol<-max_vol
+  
+  return(roll_sum_30_summary)
+  
+}
+```
+
+```{r, echo=FALSE}
+plot_max<-function(datasum,datavol,i){
+    beat<-colnames(datasum)[i]
+    max_sum<-which.max(datasum[,beat])
+    
+    max_vol<-which.max(datavol[,beat])
+    max_vol0<-which.max(datavol[,beat])-i
+    
+    max_x0<-as.Date(rownames(datavol)[max_vol])
+    max_x1<-as.Date(rownames(datavol)[max_vol0])
+    
+    p<-ggplot(data=datasum,aes(x=as.Date(rownames(datasum)),y=datasum[,beat],xlab="year",ylab=beat))+
+      geom_line()+
+      geom_point(data = roll_sum_30,aes(x=as.Date(rownames(datasum)[max_sum]),y=datasum[max_sum,beat]), color="red", size=3)+
+      geom_rect(xmin=max_x0, xmax=max_x1, ymin=-Inf, ymax=Inf, color="red", alpha=0.5)
+    cat("highest reported crimes for beat",beat,":",rownames(datasum)[max_sum-30],'-',rownames(datasum)[max_sum],'\n')
+    cat("# reported crimes:",datasum[max_sum,beat],'\n')
+    cat("highest volatility for beat",beat,":",rownames(datasum)[max_vol0],'-',rownames(datasum)[max_vol],'\n')
+    cat("# reported crimes:",datavol[max_vol,beat],'\n')
+    return(p)
+}
+
+```
+
+
+
+# 30 days + all crimes
+
+```{r, echo=FALSE}
+raw_crimes2<-read_csv("/home/xuranzeng/project/data/raw_crimes_beat_transfer.csv",)
+rownames(raw_crimes2)<-raw_crimes2$Date
+```
+
+```{r}
+roll_sum_30<-roll_sum_i(raw_crimes2,30)
+roll_vol_30<-roll_vol_i(raw_crimes2,30)
+
+#write.csv(roll_vol_30,"/home/xuranzeng/project/data/raw_crimes_beat_roll_vol_30.csv")
+```
+
+
+
+```{r}
+plot_max(roll_sum_30,roll_vol_30,1)
+
+plot_max(roll_sum_30,roll_vol_30,5)
+```
+
+```{r}
+roll_sum_30_summary<-roll_summary(roll_sum_30,roll_vol_30,30)
+head(roll_sum_30_summary)
+#write.csv(roll_sum_30_summary,"/home/xuranzeng/project/data/roll_sum_30_summary.csv")
+```
+
+
+# 7 days + all crimes
+```{r, echo=FALSE}
+raw_crimes2<-read_csv("/home/xuranzeng/project/data/raw_crimes_beat_transfer.csv",)
+rownames(raw_crimes2)<-raw_crimes2$Date
+```
+
+```{r}
+roll_sum_7<-roll_sum_i(raw_crimes2,7)
+roll_vol_7<-roll_vol_i(raw_crimes2,7)
+#write.csv(roll_sum_7,"/home/xuranzeng/project/data/raw_crimes_beat_roll_sum_7.csv")
+#write.csv(roll_vol_7,"/home/xuranzeng/project/data/raw_crimes_beat_roll_vol_7.csv")
+```
+
+
+```{r}
+plot_max(roll_sum_7,roll_vol_7,1)
+
+plot_max(roll_sum_7,roll_vol_7,5)
+```
+
+```{r}
+roll_sum_7_summary<-roll_summary(roll_sum_7,roll_vol_7,7)
+head(roll_sum_7_summary)
+#write.csv(roll_sum_7_summary,"/home/xuranzeng/project/data/roll_sum_7_summary.csv")
+```
+
+
+
+
+
+
+# 30 days + homicide crimes
+
+```{r, echo=FALSE}
+raw_crimes2<-read_csv("/home/xuranzeng/project/data/homicide_crimes_beat_transfer.csv",)
+rownames(raw_crimes2)<-raw_crimes2$Date
+```
+
+
+```{r}
+roll_sum_30<-roll_sum_i(raw_crimes2,30)
+roll_vol_30<-roll_vol_i(raw_crimes2,30)
+#write.csv(roll_sum_30,"/home/xuranzeng/project/data/homicide_roll_sum_30.csv")
+#write.csv(roll_vol_30,"/home/xuranzeng/project/data/homicide_roll_vol_30.csv")
+```
+
+
+```{r}
+plot_max(roll_sum_30,roll_vol_30,1)
+
+plot_max(roll_sum_30,roll_vol_30,5)
+
+```
+
+```{r}
+roll_sum_30_summary<-roll_summary(roll_sum_30,roll_vol_30,30)
+head(roll_sum_30_summary)
+#write.csv(roll_sum_30_summary,"/home/xuranzeng/project/data/homicide_roll_sum_30_summary.csv")
+```
+
+
+
+# 7 days + homicide crimes
+
+```{r, echo=FALSE}
+raw_crimes2<-read_csv("/home/xuranzeng/project/data/homicide_crimes_beat_transfer.csv",)
+rownames(raw_crimes2)<-raw_crimes2$Date
+```
+
+
+```{r}
+roll_sum_7<-roll_sum_i(raw_crimes2,7)
+roll_vol_7<-roll_vol_i(raw_crimes2,7)
+#write.csv(roll_sum_7,"/home/xuranzeng/project/data/homicide_roll_sum_7.csv")
+#write.csv(roll_vol_7,"/home/xuranzeng/project/data/homicide_roll_vol_7.csv")
+```
+
+
+```{r}
+
+plot_max(roll_sum_7,roll_vol_7,1)
+
+plot_max(roll_sum_7,roll_vol_7,5)
+
+```
+
+```{r}
+roll_sum_7_summary<-roll_summary(roll_sum_7,roll_vol_7,7)
+head(roll_sum_7_summary)
+#write.csv(roll_sum_30_summary,"/home/xuranzeng/project/data/homicide_roll_sum_7_summary.csv")
+```
+
