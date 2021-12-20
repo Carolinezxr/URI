@@ -1,0 +1,27 @@
+library(readr)
+
+library(lubridate)
+
+library(dplyr)
+
+crimes_data<-read_csv("E://data//project//crimes_data_zone.csv",)
+crimes_data_sample<-crimes_data[,c("day","Zone","Primary Type")]
+
+# sample year
+start_day<-as.Date("2018-08-17")
+end_day<-as.Date("2019-08-17")
+day_list<-seq(start_day, end_day,"days")
+crimes_data_sample_year <- subset(crimes_data_sample,day %in% day_list)
+colnames(crimes_data_sample_year)[2]<-"date"
+
+
+crimes_data_sample3$wday<-wday(crimes_data_sample3$date)
+sample_week$wday<-wday(sample_week$date)
+
+
+  
+crimes_data_sample_year <- crimes_data_sample %>% 
+  filter(day %in% day_list)%>% 
+  mutate(wday = wday(date))%>%
+  group_by(Zone, wday) %>%
+  summarise(n = n())
