@@ -6,7 +6,8 @@ library(TTR)
 library(tidyverse)
 
 ################### preprocessing ##################
-request<-read_csv("/project/graziul/ra/xuranzeng/request_simplified.csv")
+request<-read_csv("/project/graziul/ra/xuranzeng/request_simplified_type.csv")
+request<-request[,3:ncol(request)]
 request$DATE<-as.Date(request$CREATED_DATE, "%m/%d/%Y")
 request$POLICE_DISTRICT<-as.numeric(request$POLICE_DISTRICT) 
 
@@ -14,10 +15,10 @@ request$POLICE_DISTRICT<-as.numeric(request$POLICE_DISTRICT)
 report<-read_csv("/home/xuranzeng/project/data/crimes_data_zone_simplified.csv")
 
 
-#start_date<-"2018-07-01"
-#end_date<-"2020-07-01"
+# start_date<-"2018-07-01"
+# end_date<-"2020-07-01"
 
-#district <- 1:31
+district <- 1:31 # all city
 #district <- c("16",'17') #zone1
 #district <- c("19") #zone2
 #district <- c("12","14") #zone3
@@ -30,17 +31,17 @@ report<-read_csv("/home/xuranzeng/project/data/crimes_data_zone_simplified.csv")
 #district <- c("10","11") #zone10
 #district <- c("20","24") #zone11
 #district <- c("15","25") #zone12
-district <- c("9") #zone13
+#district <- c("9") #zone13
 
 #request1<-request[request$DATE >= start_date & request$DATE <= end_date & request$POLICE_DISTRICT %in% district, ]
 request1<-request[request$POLICE_DISTRICT %in% district, ]
 
 
 request2<-request1 %>%
-  group_by(SR_TYPE,DATE) %>%
+  group_by(TYPE2,DATE) %>%
   summarise(n = n())%>% 
   ungroup()%>%
-  pivot_wider(names_from = SR_TYPE, values_from = n)
+  pivot_wider(names_from = TYPE2, values_from = n)
 
 rownames(request2)<-as.Date(request2$DATE)
 
@@ -85,7 +86,7 @@ request4 <- request3 %>%
   inner_join(report2)
 
 colnames(request4)<-gsub(" ","_",unlist(str_replace(unlist(colnames(request4)),'_mean','')))
-#write.csv(request4,"/project/graziul/ra/xuranzeng/request_report/zone13.csv")
+
 
 
 diff_all<-request4
@@ -94,5 +95,5 @@ diff_all[,2:ncol(request4),]<-log(diff_all[,2:ncol(request4),])
 a<-as.data.frame(diff(as.matrix(diff_all[,2:ncol(request4),])))
 dlog_all<-as.data.frame(cbind(days[2:nrow(days),1],a))
 
-
-#write.csv(dlog_all,"/project/graziul/ra/xuranzeng/request_report/dzone13.csv")
+# write.csv(request4,"/project/graziul/ra/xuranzeng/request_report/allzone.csv")
+# write.csv(dlog_all,"/project/graziul/ra/xuranzeng/request_report/dallzone.csv")
