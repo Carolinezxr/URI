@@ -28,14 +28,28 @@ colnames(census)[7:10]<-paste('N',colnames(census)[3:6],sep='')
 head(census)
 
 for (i in 1:13){
-
   NHi<-unlist(NH[i])
   NHzone1<-subset(census,Zone %in% NHi)%>%
     mutate(w = Population/sum(Population))
   census[i,7:10]<-t(t(NHzone1[,3:6]) %*% NHzone1$w)
-  
 }
 
+#write.csv(census,'neighborhood.csv')
+
+rr<-read.csv('report_request_daily.csv')%>%
+  left_join(census[,c('Zone','Population')],by='Zone')
+rr<-na.omit(rr)
+rr[,9:13]<-NA
+colnames(rr)[9:13]<-paste('N',colnames(rr)[2:6],sep='')
 
 
-
+for (i in 1:nrow(rr)){
+  zone<-rr[i,'Zone']
+  date<-rr[i,'Day']
+  NHi<-unlist(NH[zone])
+  NHzone1<-subset(rr,Zone %in% NHi & Day==date)%>%
+    mutate(w=Population/sum(Population))
+  rr[i,9:13]<-t(t(NHzone1[,2:6]) %*% NHzone1$w)
+  cat('processing:',i,'\n')
+}
+#write.csv(census,'report_request_neighborhood.csv')
