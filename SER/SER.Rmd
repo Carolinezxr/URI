@@ -1,0 +1,83 @@
+---
+title: "SER"
+author: "XuranZeng"
+date: "10/21/2021"
+output: 
+  html_document: 
+    toc: true
+    theme: united
+---
+
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(fig.width=12, fig.height=3, fig.pash='Figs/', echo = TRUE, warning=FALSE, message=FALSE)
+```
+
+```{r, echo=TRUE}
+library(seewave)
+library(tuneR)
+library(ggplot2)
+library(zoo)
+library(dplyr)
+library(reshape)
+```
+
+# TEO-CB-auto-Env
+## pre-pocessing:
+
+```{r,echo=TRUE,fig.height=8}
+raw<-readMP3("/home/xuranzeng/SER/201808040636-306923-27730.mp3")
+data<-raw@left
+f<-raw@samp.rate
+acoustat(data,f)
+```
+
+
+
+### Select non-silent section
+
+Select 1501-1501.4
+
+```{r, echo=TRUE}
+a<-cutw(data,f,from=1501,to=1501.4)
+timeArray <- (0:(nrow(a)-1)) / f
+timeArray <- timeArray * 1000 #scale to milliseconds
+plot(timeArray, a, type='l', col='black', xlab='Time (ms)', ylab='Amplitude')
+```
+
+## TEO
+```{r, echo=TRUE}
+teo<-TKEO(a,f)
+teo<-na.omit(teo)
+#ggplot(as.data.frame(teo),aes(x=time,y=V2))+geom_line()
+```
+
+## TEO autocorrelation
+```{r, echo=TRUE}
+# TEO autoccorrelation
+autocor<-acf(teo[,2],lag.max = nrow(teo),plot=FALSE)$acf
+c<-teo[,1]
+c<-cbind(c,autocor)
+
+ggplot(as.data.frame(c),aes(x=c,y=autocor))+
+  geom_line()
+```
+
+## Envelop of TEO autocorrelation
+```{r, echo=TRUE}
+c<-as.data.frame(c)
+TUX<-c(1,which(diff(sign(diff(c[,2])))==-2)+1)
+TUY<-c[TUX,2]
+
+plot(c[,1], c[,2], type='l')
+lines(c[TUX,1],c[TUX,2],  col='red')
+```
+
+## Area
+```{r, echo=TRUE}
+x <- c[TUX,1]
+y <- c[TUX,2]
+id <- order(x)
+
+AUC <- sum(diff(x[id])*rollmean(y[id],2))
+cat("The area under Envelope of Autocorrelation is:",AUC)
+```
